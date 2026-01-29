@@ -46,7 +46,6 @@ jobs:
         cd /tmp
         git clone https://github.com/xmrig/xmrig-deps.git xmrig-deps-windows
         cd xmrig-deps-windows
-        bash build.sh mingw64 static
     
     - name: Set dependencies path
       run: echo "XMRIG_DEPS=/tmp/xmrig-deps-windows/build" >> $GITHUB_ENV
