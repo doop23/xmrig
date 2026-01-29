@@ -41,6 +41,16 @@ jobs:
         x86_64-w64-mingw32-gcc --version
         x86_64-w64-mingw32-g++ --version
     
+    - name: Clone and build Windows dependencies
+      run: |
+        cd /tmp
+        git clone https://github.com/xmrig/xmrig-deps.git xmrig-deps-windows
+        cd xmrig-deps-windows
+        bash build.sh mingw64 static
+    
+    - name: Set dependencies path
+      run: echo "XMRIG_DEPS=/tmp/xmrig-deps-windows/build" >> $GITHUB_ENV
+    
     - name: Create build directory
       run: mkdir -p build-windows
     
@@ -50,12 +60,11 @@ jobs:
         cmake .. \
           -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain-mingw-w64.cmake \
           -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+          -DXMRIG_DEPS=${{ env.XMRIG_DEPS }} \
           -DBUILD_STATIC=ON \
           -DWITH_HWLOC=OFF \
           -DWITH_OPENCL=OFF \
-          -DWITH_CUDA=OFF \
-          -DWITH_HTTPS=ON \
-          -DWITH_DEBUG_LOG=OFF
+          -DWITH_CUDA=OFF
     
     - name: Build xmrig.exe
       run: |
