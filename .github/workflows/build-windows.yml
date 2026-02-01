@@ -1,111 +1,83 @@
-name: Build XMRig Windows (Cross-Compile)
+name: Windows x64 (MSYS2 UCRT)
 
 on:
   push:
-    branches: [ master, main, dev ]
-    paths:
-      - 'src/**'
-      - 'CMakeLists.txt'
-      - 'cmake/**'
-      - '.github/workflows/build-windows.yml'
-  pull_request:
-    branches: [ master, main ]
+    tags:
+      - "v*"
   workflow_dispatch:
-
-env:
-  BUILD_TYPE: Release
 
 jobs:
   build-windows:
-    runs-on: ubuntu-latest
-    
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        submodules: recursive
-    
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          mingw-w64 \
-          mingw-w64-tools \
-          pkg-config \
-          cmake \
-          make \
-          git \
-          binutils-mingw-w64
-        
-        # Verify MinGW installation
-        x86_64-w64-mingw32-gcc --version
-        x86_64-w64-mingw32-g++ --version
-    
-    - name: Clone and build Windows dependencies
-      run: |
-        cd /tmp
-        git clone https://github.com/xmrig/xmrig-deps.git xmrig-deps-windows
-        cd xmrig-deps-windows
-    
-    - name: Set dependencies path
-      run: echo "XMRIG_DEPS=/tmp/xmrig-deps-windows/build" >> $GITHUB_ENV
-    
-    - name: Create build directory
-      run: mkdir -p build-windows
-    
-    - name: Configure CMake for Windows target
-      run: |
-        cd build-windows
-        cmake .. \
-          -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain-mingw-w64.cmake \
-          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-          -DXMRIG_DEPS=${{ env.XMRIG_DEPS }} \
-          -DBUILD_STATIC=ON \
-          -DWITH_HWLOC=OFF \
-          -DWITH_OPENCL=OFF \
-          -DWITH_CUDA=OFF
-    
-    - name: Build xmrig.exe
-      run: |
-        cd build-windows
-        make -j$(nproc)
-        
-        # List output files
-        echo "=== Build artifacts ==="
-        ls -lh xmrig.exe || echo "xmrig.exe not found"
-        find . -name "*.exe" -type f
-    
-    - name: Verify executable
-      run: |
-        if [ -f build-windows/xmrig.exe ]; then
-          echo "=== Verifying Windows executable ==="
-          file build-windows/xmrig.exe
-          x86_64-w64-mingw32-objdump -x build-windows/xmrig.exe | head -20
-        else
-          echo "ERROR: xmrig.exe not found!"
-          exit 1
-        fi
-    
-    - name: Upload Windows executable
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: xmrig-windows
-        path: build-windows/xmrig.exe
-        retention-days: 30
-    
-    - name: Upload build logs on failure
-      if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-logs-windows
-        path: build-windows/CMakeFiles/CMakeOutput.log
-        retention-days: 7
-    
-    - name: Create Release (on tag)
-      if: startsWith(github.ref, 'refs/tags/')
-      uses: softprops/action-gh-release@v1
-      with:
-        files: build-windows/xmrig.exe
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup MSYS2 (UCRT64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >
+            git
+            base-devel
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-libuv
+            mingw-w64-ucrt-x86_64-hwloc
+            mingw-w64-ucrt-x86_64-openssl
+            mingw-w64-ucrt-x86_64-nsis
+
+      - name: Fetch upstream tags
+        run: |
+          git fetch --tags https://github.com/xmrig/xmrig.git
+
+      - name: Checkout latest upstream release
+        run: |
+          LATEST_TAG=$(git tag | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)
+          echo "Building $LATEST_TAG"
+          git checkout "$LATEST_TAG"
+
+      - name: Apply patch branch
+        run: |
+          git fetch origin patch
+          git merge --no-ff origin/patch
+
+      - name: Configure (CMake)
+        run: |
+          mkdir build
+          cd build
+
+          cmake .. \
+            -G "MinGW Makefiles" \
+            -DBUILD_STATIC=ON \
+            -DWITH_EMBEDDED_CONFIG=ON \
+            -DWITH_CN_LITE=OFF \
+            -DWITH_CN_HEAVY=OFF \
+            -DWITH_CN_PICO=OFF \
+            -DWITH_CN_FEMTO=OFF \
+            -DWITH_ARGON2=OFF \
+            -DWITH_KAWPOW=OFF \
+            -DWITH_GHOSTRIDER=OFF
+
+      - name: Build
+        run: |
+          cd build
+          make -j$(nproc)
+
+      - name: Strip binary
+        run: |
+          strip build/xmrig.exe
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xmrig-windows-x64
+          path: build/xmrig.exe
